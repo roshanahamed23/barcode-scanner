@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>Package Scanner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f1117;--surface:#1a1d27;--accent:#6c63ff;
+      --success:#22c55e;--warn:#f59e0b;--danger:#ef4444;
+      --text:#e2e8f0;--muted:#64748b;--r:14px;
+    }
+    body{
+      background:var(--bg);color:var(--text);
+      font-family:'Segoe UI',system-ui,sans-serif;
+      min-height:100vh;display:flex;flex-direction:column;
+      align-items:center;padding:20px 16px 48px;
+    }
+    h1{font-size:1.4rem;font-weight:700;margin-bottom:4px}
+    .sub{color:var(--muted);font-size:.83rem;margin-bottom:20px;text-align:center}
+
+    /* ── IMPORTANT: paste your Apps Script /exec URL below ── */
+    /* It's set via the input on the page so you don't have to edit this file */
+
+    .card{
+      background:var(--surface);border-radius:var(--r);
+      padding:18px;width:100%;max-width:420px;margin-bottom:14px;
+    }
+    label{font-size:.75rem;font-weight:600;text-transform:uppercase;
+          letter-spacing:.07em;color:var(--muted);display:block;margin-bottom:6px}
+    input[type=text],input[type=url]{
+      width:100%;background:#0f1117;border:1.5px solid #2e3347;
+      border-radius:10px;padding:11px 14px;color:var(--text);
+      font-size:.9rem;outline:none;
+    }
+    input:focus{border-color:var(--accent)}
+
+    #reader{width:100%;border-radius:10px;overflow:hidden;background:#000;min-height:220px}
+
+    .btn{
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      width:100%;padding:13px;border-radius:10px;border:none;
+      font-size:.95rem;font-weight:600;cursor:pointer;
+      transition:opacity .15s,transform .1s;margin-top:10px;
+    }
+    .btn:active{transform:scale(.97)}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-outline{background:transparent;color:var(--text);border:1.5px solid #2e3347}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+
+    .row{display:flex;gap:8px;margin-top:12px}
+    .row input{flex:1}
+    .row .btn{width:auto;padding:11px 18px;margin-top:0;flex-shrink:0}
+
+    #result{
+      display:none;padding:15px 18px;border-radius:var(--r);
+      font-weight:600;font-size:1rem;text-align:center;
+      width:100%;max-width:420px;margin-bottom:14px;
+      animation:pop .2s ease;
+    }
+    @keyframes pop{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
+    .success{background:#14532d;color:var(--success)}
+    .warn   {background:#451a03;color:var(--warn)}
+    .danger {background:#450a0a;color:var(--danger)}
+    .info   {background:#1e1b4b;color:#a5b4fc}
+
+    .log-title{font-size:.72rem;font-weight:600;text-transform:uppercase;
+               letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
+    #log{list-style:none;max-height:190px;overflow-y:auto}
+    #log li{display:flex;justify-content:space-between;align-items:center;
+            padding:8px 0;border-bottom:1px solid #22263a;font-size:.8rem;gap:8px}
+    #log li:last-child{border-bottom:none}
+    .bc{font-family:monospace;flex:1;word-break:break-all}
+    .badge{padding:2px 8px;border-radius:99px;font-size:.7rem;font-weight:700;white-space:nowrap;flex-shrink:0}
+    .bs{background:#14532d;color:var(--success)}
+    .bw{background:#451a03;color:var(--warn)}
+    .bd{background:#450a0a;color:var(--danger)}
+    .spin{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);
+          border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    .empty{color:var(--muted);font-size:.82rem;padding:8px 0}
+  </style>
+</head>
+<body>
+
+<h1>📦 Package Scanner</h1>
+<p class="sub">Standalone scanner — no iframe restrictions</p>
+
+<!-- Step 1: Apps Script URL -->
+<div class="card">
+  <label>Apps Script URL (paste once, saved locally)</label>
+  <input type="url" id="scriptUrl"
+    placeholder="https://script.google.com/macros/s/.../exec"
+    oninput="saveUrl()" />
+  <p style="color:var(--muted);font-size:.75rem;margin-top:6px">
+    Deploy → Web App → copy the /exec URL and paste here
+  </p>
+</div>
+
+<!-- Result -->
+<div id="result"></div>
+
+<!-- Camera -->
+<div class="card">
+  <div id="reader"></div>
+  <button class="btn btn-primary" id="startBtn" onclick="startCam()">▶ Start Camera</button>
+  <button class="btn btn-outline" id="stopBtn"  onclick="stopCam()" style="display:none">■ Stop Camera</button>
+
+  <div class="row" style="margin-top:16px">
+    <input type="text" id="manualInput" placeholder="Or type / paste barcode…"
+           onkeydown="if(event.key==='Enter')submitManual()"/>
+    <button class="btn btn-primary" onclick="submitManual()">Go</button>
+  </div>
+</div>
+
+<!-- Log -->
+<div class="card">
+  <div class="log-title">Scan History</div>
+  <ul id="log"><li class="empty">No scans yet.</li></ul>
+</div>
+
+<script>
+  // ── Persist the script URL in localStorage so user types it once ──────────
+  const urlInput = document.getElementById('scriptUrl');
+  const stored   = localStorage.getItem('appsScriptUrl');
+  if (stored) urlInput.value = stored;
+  function saveUrl() { localStorage.setItem('appsScriptUrl', urlInput.value.trim()); }
+
+  // ── Camera ────────────────────────────────────────────────────────────────
+  let qr       = null;
+  let scanning = false;
+  let lastScan = null;
+
+  function startCam() {
+    const url = urlInput.value.trim();
+    if (!url) { showResult('⚠️ Paste your Apps Script URL first.', 'warn'); return; }
+
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display  = 'block';
+
+    qr = new Html5Qrcode('reader');
+    Html5Qrcode.getCameras()
+      .then(cams => {
+        if (!cams.length) throw new Error('No camera found');
+        // Prefer back camera
+        const cam = cams.find(c =>
+          /back|rear|environment/i.test(c.label)
+        ) || cams[cams.length - 1];
+
+        return qr.start(cam.id,
+          { fps: 10, qrbox: { width: 250, height: 130 } },
+          onScan, () => {}
+        );
+      })
+      .then(() => { scanning = true; })
+      .catch(err => {
+        showResult('Camera error: ' + err.message, 'danger');
+        resetBtns();
+      });
+  }
+
+  function stopCam() {
+    if (qr && scanning) qr.stop().then(() => { qr.clear(); scanning = false; });
+    resetBtns();
+  }
+
+  function resetBtns() {
+    document.getElementById('startBtn').style.display = 'block';
+    document.getElementById('stopBtn').style.display  = 'none';
+  }
+
+  function onScan(text) {
+    if (text === lastScan) return;
+    lastScan = text;
+    setTimeout(() => { lastScan = null; }, 3000);
+    submit(text);
+  }
+
+  // ── Manual ────────────────────────────────────────────────────────────────
+  function submitManual() {
+    const v = document.getElementById('manualInput').value.trim();
+    if (v) { submit(v); document.getElementById('manualInput').value = ''; }
+  }
+
+  // ── Fetch → Apps Script doPost ───────────────────────────────────────────
+  async function submit(barcode) {
+    const scriptUrl = urlInput.value.trim();
+    if (!scriptUrl) { showResult('⚠️ Paste your Apps Script URL first.', 'warn'); return; }
+
+    showResult('<span class="spin"></span> Checking ' + esc(barcode) + '…', '');
+
+    try {
+      // Apps Script doPost reads e.parameter so we POST as form data
+      const body = new URLSearchParams({ barcode });
+      const res  = await fetch(scriptUrl, {
+        method:   'POST',
+        body,
+        // redirect:'follow' is needed because Apps Script 302-redirects on POST
+        redirect: 'follow',
+      });
+      const text = await res.text();
+      handleResponse(barcode, text.trim());
+    } catch (err) {
+      showResult('Network error: ' + err.message + 
+        '<br><small>Check CORS setting in deployment</small>', 'danger');
+    }
+  }
+
+  function handleResponse(barcode, resp) {
+    let cls = 'info', badge = 'bd';
+    if (resp === 'Package Found & Marked') { cls = 'success'; badge = 'bs'; }
+    else if (resp === 'Already Scanned')   { cls = 'warn';    badge = 'bw'; }
+    else if (resp === 'Barcode Not Found') { cls = 'danger';  badge = 'bd'; }
+    showResult(resp, cls);
+    addLog(barcode, resp, badge);
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function showResult(msg, cls) {
+    const el = document.getElementById('result');
+    el.innerHTML = msg; el.className = cls; el.style.display = 'block';
+  }
+
+  function addLog(barcode, status, badge) {
+    const log   = document.getElementById('log');
+    const empty = log.querySelector('.empty');
+    if (empty) empty.remove();
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="bc">${esc(barcode)}</span>
+                    <span class="badge ${badge}">${esc(status)}</span>`;
+    log.insertBefore(li, log.firstChild);
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>
